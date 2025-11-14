@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Conexão - API Projuris</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-left: 4px solid #2196F3;
+        }
+        .success {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .error {
+            color: #f44336;
+            font-weight: bold;
+        }
+        .info {
+            color: #2196F3;
+            font-weight: bold;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 Teste de Conexão - API Projuris</h1>
+
+        <p>Este arquivo testa a conexão com a API do Projuris antes de usar o dashboard principal.</p>
+
+        <div class="test-section">
+            <h3>Configuração da API</h3>
+            <p><strong>Domain:</strong> servidor</p>
+            <p><strong>Username:</strong> sistemacassel@servidor.adv.br</p>
+            <p><strong>API URL:</strong> https://api.projurisadv.com.br/adv-service</p>
+            <p><strong>Token URL:</strong> https://apigw.projurisadv.com.br/auth/token</p>
+            <p><strong>Client ID:</strong> api_cliente_codigo_12964</p>
+        </div>
+
+        <div>
+            <button onclick="testarAutenticacao()">1️⃣ Testar Autenticação</button>
+            <button onclick="testarBuscaTarefas()" id="btnBuscaTarefas" disabled>2️⃣ Testar Busca de Tarefas</button>
+            <button onclick="limparResultados()">🗑️ Limpar Resultados</button>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Processando...</p>
+        </div>
+
+        <div id="resultados"></div>
+    </div>
+
+    <script>
+        const API_CONFIG = {
+            domain: 'servidor',
+            username: 'sistemacassel@servidor.adv.br',
+            password: 'CRrKrw9D63TvHi',
+            apiUrl: 'https://api.projurisadv.com.br/adv-service',
+            tokenUrl: 'https://apigw.projurisadv.com.br/auth/token',
+            clientId: 'api_cliente_codigo_12964',
+            clientSecret: '@2022@8da6df1ca4914b04a5df3566278e5393'
+        };
+
+        let accessToken = null;
+
+        function mostrarLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        function adicionarResultado(titulo, conteudo, tipo = 'info') {
+            const div = document.createElement('div');
+            div.className = 'test-section';
+            div.innerHTML = `
+                <h3 class="${tipo}">${titulo}</h3>
+                <div>${conteudo}</div>
+            `;
+            document.getElementById('resultados').appendChild(div);
+        }
+
+        async function testarAutenticacao() {
+            mostrarLoading(true);
+
+            try {
+                adicionarResultado('🔄 Teste 1: Autenticação OAuth2', 'Solicitando token de acesso...', 'info');
+
+                const auth = btoa(`${API_CONFIG.clientId}:${API_CONFIG.clientSecret}`);
+
+                const response = await fetch(API_CONFIG.tokenUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Basic ${auth}`,
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: new URLSearchParams({
+                        'grant_type': 'password',
+                        'username': API_CONFIG.username,
+                        'password': API_CONFIG.password
+                    })
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', [...response.headers.entries()]);
+
+                const responseText = await response.text();
+                console.log('Response body:', responseText);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${responseText}`);
+                }
+
+                const data = JSON.parse(responseText);
+                accessToken = data.access_token;
+
+                adicionarResultado(
+                    '✅ Autenticação Bem-Sucedida',
+                    `
+                    <p class="success">Token obtido com sucesso!</p>
+                    <p><strong>Access Token:</strong> ${accessToken.substring(0, 50)}...</p>
+                    <p><strong>Tipo:</strong> ${data.token_type || 'Bearer'}</p>
+                    <p><strong>Expira em:</strong> ${data.expires_in ? data.expires_in + ' segundos' : 'N/A'}</p>
+                    <p><strong>Timestamp:</strong> ${new Date().toLocaleString('pt-BR')}</p>
+                    <details>
+                        <summary>Ver resposta completa</summary>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </details>
+                    `,
+                    'success'
+                );
+
+                document.getElementById('btnBuscaTarefas').disabled = false;
+
+            } catch (error) {
+                console.error('Erro na autenticação:', error);
+                adicionarResultado(
+                    '❌ Erro na Autenticação',
+                    `
+                    <p class="error">Falha ao obter token de acesso.</p>
+                    <p><strong>Erro:</strong> ${error.message}</p>
+                    <p><strong>Timestamp:</strong> ${new Date().toLocaleString('pt-BR')}</p>
+                    <details>
+                        <summary>Possíveis causas</summary>
+                        <ul>
+                            <li>Credenciais incorretas (username, password, client_id ou client_secret)</li>
+                            <li>Domain incorreto ou inexistente</li>
+                            <li>Problemas de rede ou firewall bloqueando a requisição</li>
+                            <li>CORS (Cross-Origin Resource Sharing) bloqueando a requisição do navegador</li>
+                            <li>API do Projuris fora do ar</li>
+                        </ul>
+                    </details>
+                    <details>
+                        <summary>Como resolver CORS</summary>
+                        <p>Se o erro for de CORS, você tem algumas opções:</p>
+                        <ol>
+                            <li><strong>Usar um servidor backend:</strong> Criar um backend intermediário que faz as requisições</li>
+                            <li><strong>Usar extensão de navegador:</strong> Instalar uma extensão que desabilita CORS (apenas para desenvolvimento)</li>
+                            <li><strong>Usar proxy CORS:</strong> Usar um serviço de proxy CORS (não recomendado para produção)</li>
+                        </ol>
+                    </details>
+                    `,
+                    'error'
+                );
+            } finally {
+                mostrarLoading(false);
+            }
+        }
+
+        async function testarBuscaTarefas() {
+            if (!accessToken) {
+                alert('Primeiro você precisa autenticar (Teste 1)');
+                return;
+            }
+
+            mostrarLoading(true);
+
+            try {
+                adicionarResultado('🔄 Teste 2: Busca de Tarefas', 'Consultando tarefas da API...', 'info');
+
+                const response = await fetch(`${API_CONFIG.apiUrl}/tarefa/consulta-sem-paginacao`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                console.log('Response status:', response.status);
+                console.log('Response headers:', [...response.headers.entries()]);
+
+                const responseText = await response.text();
+                console.log('Response body length:', responseText.length);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${responseText}`);
+                }
+
+                const data = JSON.parse(responseText);
+
+                // Tentar identificar o array de tarefas
+                let tarefas = [];
+                if (data.tarefaConsultaWs) {
+                    tarefas = data.tarefaConsultaWs;
+                } else if (Array.isArray(data)) {
+                    tarefas = data;
+                }
+
+                const totalTarefas = tarefas.length;
+
+                // Estatísticas básicas
+                const amostra = tarefas.slice(0, 3);
+
+                adicionarResultado(
+                    '✅ Busca de Tarefas Bem-Sucedida',
+                    `
+                    <p class="success">Tarefas obtidas com sucesso!</p>
+                    <p><strong>Total de tarefas:</strong> ${totalTarefas}</p>
+                    <p><strong>Timestamp:</strong> ${new Date().toLocaleString('pt-BR')}</p>
+
+                    ${totalTarefas > 0 ? `
+                        <h4>📋 Amostra de Tarefas (3 primeiras):</h4>
+                        ${amostra.map((tarefa, i) => `
+                            <div style="margin: 10px 0; padding: 10px; background: #f0f0f0; border-radius: 4px;">
+                                <strong>Tarefa ${i + 1}:</strong><br>
+                                <strong>Identificador:</strong> ${tarefa.identificador || 'N/A'}<br>
+                                <strong>Tipo:</strong> ${tarefa.nomeTarefaTipo || 'N/A'}<br>
+                                <strong>Responsáveis:</strong> ${tarefa.usuarioResponsaveis || 'N/A'}<br>
+                                <strong>Data Limite:</strong> ${tarefa.dataLimite || 'N/A'}<br>
+                                <strong>Situação:</strong> ${tarefa.situacao || 'N/A'}
+                            </div>
+                        `).join('')}
+
+                        <details>
+                            <summary>Ver estrutura completa da primeira tarefa</summary>
+                            <pre>${JSON.stringify(amostra[0], null, 2)}</pre>
+                        </details>
+
+                        <details>
+                            <summary>Ver campos disponíveis</summary>
+                            <pre>${JSON.stringify(Object.keys(amostra[0] || {}), null, 2)}</pre>
+                        </details>
+                    ` : '<p>Nenhuma tarefa encontrada no sistema.</p>'}
+
+                    <details>
+                        <summary>Ver resposta completa da API</summary>
+                        <pre>${JSON.stringify(data, null, 2).substring(0, 5000)}${JSON.stringify(data).length > 5000 ? '...\n(truncado)' : ''}</pre>
+                    </details>
+                    `,
+                    'success'
+                );
+
+            } catch (error) {
+                console.error('Erro ao buscar tarefas:', error);
+                adicionarResultado(
+                    '❌ Erro ao Buscar Tarefas',
+                    `
+                    <p class="error">Falha ao consultar tarefas.</p>
+                    <p><strong>Erro:</strong> ${error.message}</p>
+                    <p><strong>Timestamp:</strong> ${new Date().toLocaleString('pt-BR')}</p>
+                    <details>
+                        <summary>Possíveis causas</summary>
+                        <ul>
+                            <li>Token expirado (tente autenticar novamente)</li>
+                            <li>Token inválido ou sem permissões</li>
+                            <li>Endpoint da API incorreto</li>
+                            <li>Formato da requisição incorreto</li>
+                            <li>Problemas de rede ou CORS</li>
+                        </ul>
+                    </details>
+                    `,
+                    'error'
+                );
+            } finally {
+                mostrarLoading(false);
+            }
+        }
+
+        function limparResultados() {
+            document.getElementById('resultados').innerHTML = '';
+            accessToken = null;
+            document.getElementById('btnBuscaTarefas').disabled = true;
+        }
+
+        // Informações adicionais ao carregar
+        window.addEventListener('load', () => {
+            adicionarResultado(
+                '📋 Instruções',
+                `
+                <p>Este teste verifica se a integração com a API do Projuris está funcionando corretamente.</p>
+                <ol>
+                    <li><strong>Clique em "Testar Autenticação"</strong> para verificar se as credenciais estão corretas</li>
+                    <li><strong>Se a autenticação funcionar</strong>, clique em "Testar Busca de Tarefas"</li>
+                    <li><strong>Verifique o console do navegador</strong> (F12) para logs detalhados</li>
+                </ol>
+                <p><strong>⚠️ Importante:</strong> Se você receber erros de CORS, significa que o navegador está bloqueando a requisição por questões de segurança. Neste caso, você precisará usar um backend intermediário ou configurar o servidor da API para permitir requisições do seu domínio.</p>
+                `,
+                'info'
+            );
+        });
+    </script>
+</body>
+</html>
