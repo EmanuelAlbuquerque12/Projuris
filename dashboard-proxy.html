@@ -1,0 +1,1445 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Tarefas - Cassel Ruzzarin (via Proxy)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://kit.fontawesome.com/4a5d5b7d27.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .table-header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .status-concluido {
+            background-color: #22c55e;
+            color: white;
+        }
+        .status-aberto {
+            background-color: #3b82f6;
+            color: white;
+        }
+        .status-atraso {
+            background-color: #ef4444;
+            color: white;
+        }
+        .zebra-stripe:nth-child(even) {
+            background-color: #f9fafb;
+        }
+        .scrollable-list {
+            height: 250px;
+            overflow-y: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.375rem;
+        }
+        .scrollable-list label {
+            padding: 0.5rem;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .scrollable-list label:hover {
+            background-color: #f3f4f6;
+        }
+        .scrollable-list input:checked + span {
+            color: #1e40af;
+            font-weight: 600;
+        }
+        .checkbox-custom {
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #d1d5db;
+            border-radius: 3px;
+            position: relative;
+            margin-right: 8px;
+            cursor: pointer;
+        }
+        .checkbox-custom:checked {
+            background-color: #3b82f6;
+            border-color: #3b82f6;
+        }
+        .checkbox-custom:checked::after {
+            content: '✓';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        #graficoTaxaConclusao {
+            max-width: 150px !important;
+            max-height: 150px !important;
+            width: 150px !important;
+            height: 150px !important;
+        }
+        .chart-container {
+            position: relative;
+            width: 150px;
+            height: 150px;
+            margin: 0 auto;
+        }
+        .sortable-header, .sortable-header-atraso, .sortable-header-adiantadas {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .sortable-header:hover, .sortable-header-atraso:hover, .sortable-header-adiantadas:hover {
+            background-color: #e5e7eb;
+        }
+        .sort-icon {
+            margin-left: 8px;
+            color: #9ca3af;
+        }
+        .sort-icon.active {
+            color: #3b82f6;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-online {
+            background-color: #22c55e;
+            animation: pulse 2s infinite;
+        }
+        .status-offline {
+            background-color: #ef4444;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="container mx-auto p-4">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 flex items-center justify-between">
+            <span>
+                <i class="fas fa-chart-line mr-2"></i>
+                Dashboard de Tarefas - Cassel Ruzzarin
+            </span>
+            <div class="flex items-center text-sm font-normal">
+                <span class="status-indicator" id="statusIndicator"></span>
+                <span id="statusText" class="text-gray-600">Conectando...</span>
+                <button onclick="carregarDados(true)" class="ml-4 bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 flex items-center transition duration-200">
+                    <i class="fas fa-sync-alt mr-2" id="refreshIcon"></i> Atualizar
+                </button>
+            </div>
+        </h1>
+
+        <!-- Status de Conexão -->
+        <div class="bg-white p-4 rounded-lg shadow-md mb-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-600">
+                        <i class="fas fa-clock mr-2"></i>
+                        Última atualização: <span id="ultimaAtualizacao" class="font-semibold">-</span>
+                    </p>
+                    <p class="text-sm text-gray-600 mt-1">
+                        <i class="fas fa-sync mr-2"></i>
+                        Atualização automática a cada <span class="font-semibold">30 segundos</span>
+                    </p>
+                </div>
+                <div>
+                    <label class="flex items-center cursor-pointer">
+                        <span class="mr-2 text-sm text-gray-600">Atualização automática:</span>
+                        <input type="checkbox" id="autoRefreshToggle" checked class="checkbox-custom">
+                    </label>
+                </div>
+            </div>
+            <div id="errorMessage" class="hidden mt-3 p-3 bg-red-100 border border-red-400 text-red-700 rounded"></div>
+            <div id="successMessage" class="hidden mt-3 p-3 bg-green-100 border border-green-400 text-green-700 rounded"></div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div class="bg-white p-6 rounded-lg shadow-md md:col-span-2">
+                <h2 class="text-xl font-semibold mb-4">Filtros</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Responsáveis</label>
+                        <button onclick="toggleSelecaoResponsaveis()" class="mb-2 bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 flex items-center transition duration-200 text-sm">
+                            <i class="fas fa-check-square mr-2"></i> Selecionar/Desselecionar Todos
+                        </button>
+                        <div id="filtroResponsaveisContainer" class="scrollable-list">
+                            <p class="p-4 text-gray-500 text-sm">Carregando...</p>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">Selecione um ou mais responsáveis</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Situação</label>
+                        <button onclick="toggleSelecaoSituacoes()" class="mb-2 bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 flex items-center transition duration-200 text-sm">
+                            <i class="fas fa-check-square mr-2"></i> Selecionar/Desselecionar Todos
+                        </button>
+                        <div id="filtroSituacaoContainer" class="scrollable-list">
+                            <p class="p-4 text-gray-500 text-sm">Carregando...</p>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">Selecione uma ou mais situações</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Tipos de tarefas</label>
+                        <select id="filtroTipoTarefa" class="w-full border p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Tarefas relacionadas</label>
+                        <select id="filtroTipoRelacionada" class="w-full border p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Todas</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Grupos de trabalho</label>
+                        <select id="filtroGrupos" class="w-full border p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+
+                    <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Data de criação</label>
+                            <input type="date" id="filtroDataCriacaoInicio" placeholder="Data início" class="w-full border p-2 rounded-md mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <input type="date" id="filtroDataCriacaoFim" placeholder="Data fim" class="w-full border p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Data fatal</label>
+                            <input type="date" id="filtroDataFatalInicio" placeholder="Data início" class="w-full border p-2 rounded-md mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <input type="date" id="filtroDataFatalFim" placeholder="Data fim" class="w-full border p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4 flex space-x-4">
+                    <button onclick="limparFiltros()" class="bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 flex items-center transition duration-200">
+                        <i class="fas fa-eraser mr-2"></i> Limpar Filtros
+                    </button>
+                    <button onclick="toggleTabela()" class="bg-purple-500 text-white px-4 py-2 rounded-md hover:bg-purple-600 flex items-center transition duration-200">
+                        <i class="fas fa-table mr-2"></i> Mostrar/Ocultar Tabela
+                    </button>
+                    <button onclick="exportarExcel()" class="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600 flex items-center transition duration-200">
+                        <i class="fas fa-file-excel mr-2"></i> Exportar Excel
+                    </button>
+                </div>
+            </div>
+
+            <div class="md:col-span-1">
+                <div class="bg-white p-6 rounded-lg shadow-md mb-4">
+                    <h2 class="text-xl font-semibold mb-4">Resumo - Prazos</h2>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="text-center">
+                            <p class="text-lg font-bold text-gray-800" id="totalTarefas">0</p>
+                            <p class="text-sm text-gray-600">Total</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-lg font-bold text-red-500" id="contadorAtraso">0</p>
+                            <p class="text-sm text-gray-600">Em atraso</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-lg font-bold text-green-500" id="tarefasConcluidas">0</p>
+                            <p class="text-sm text-gray-600">Concluídas</p>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-lg font-bold text-blue-500" id="contadorEmAberto">0</p>
+                            <p class="text-sm text-gray-600">Em aberto</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-xl font-semibold mb-4">Taxa de Conclusão</h2>
+                    <div class="flex flex-col items-center">
+                        <p class="text-2xl font-bold text-gray-800 mb-2" id="taxaConclusao">0%</p>
+                        <div class="chart-container">
+                            <canvas id="graficoTaxaConclusao"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Gráficos</h2>
+                <button onclick="toggleSection('graficosContent')" class="bg-gray-300 text-gray-800 px-3 py-1 rounded-md hover:bg-gray-400 flex items-center transition duration-200 text-sm">
+                    <i class="fas fa-chevron-up mr-2" id="graficosIcon"></i> Recolher/Expandir
+                </button>
+            </div>
+            <div id="graficosContent">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h3 class="text-lg font-medium mb-2">Distribuição por Status</h3>
+                        <div class="h-80 flex items-center justify-center">
+                            <canvas id="graficoStatus"></canvas>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-medium mb-2">Tarefas por Tipo</h3>
+                        <div class="h-80 flex items-center justify-center">
+                            <canvas id="graficoTipo"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Tarefas Adiantadas</h2>
+                <button onclick="toggleSection('adiantadasContent')" class="bg-gray-300 text-gray-800 px-3 py-1 rounded-md hover:bg-gray-400 flex items-center transition duration-200 text-sm">
+                    <i class="fas fa-chevron-up mr-2" id="adiantadasIcon"></i> Recolher/Expandir
+                </button>
+            </div>
+            <div id="adiantadasContent">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-gray-200">
+                            <tr>
+                                <th class="p-3 font-semibold border sortable-header-adiantadas" data-column-key="Pasta">Pasta<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-adiantadas" data-column-key="Identificador">Tarefa<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-adiantadas" data-column-key="Responsaveis">Responsável<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-adiantadas" data-column-key="Tipo">Tipo de tarefa<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-adiantadas" data-column-key="DataCriacao">Data de criação<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-adiantadas" data-column-key="DataConclusao">Data da conclusão<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-adiantadas" data-column-key="TempoDecorrido">Tempo Decorrido<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-adiantadas" data-column-key="TempoOtimizado">Tempo Otimizado<i class="fas fa-sort sort-icon"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody id="listaAdiantadas">
+                            <tr>
+                                <td class="p-3 text-gray-500 italic border" colspan="8">Carregando...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Tarefas em Atraso</h2>
+                <button onclick="toggleSection('atrasosContent')" class="bg-gray-300 text-gray-800 px-3 py-1 rounded-md hover:bg-gray-400 flex items-center transition duration-200 text-sm">
+                    <i class="fas fa-chevron-up mr-2" id="atrasosIcon"></i> Recolher/Expandir
+                </button>
+            </div>
+            <div id="atrasosContent">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-gray-200">
+                            <tr>
+                                <th class="p-3 font-semibold border sortable-header-atraso" data-column-key="Pasta">Pasta<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-atraso" data-column-key="Identificador">Tarefa<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-atraso" data-column-key="Responsaveis">Responsável<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-atraso" data-column-key="Tipo">Tipo de tarefa<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-atraso" data-column-key="DataFatal">Data fatal<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-atraso" data-column-key="DiasAtraso">Dias em atraso<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header-atraso" data-column-key="TempoDecorrido">Tempo Decorrido<i class="fas fa-sort sort-icon"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody id="listaAtrasos">
+                            <tr>
+                                <td class="p-3 text-gray-500 italic border" colspan="7">Carregando...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6" id="tabelaContainer">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Lista Completa de Tarefas</h2>
+                <button onclick="toggleSection('tabelaContent')" class="bg-gray-300 text-gray-800 px-3 py-1 rounded-md hover:bg-gray-400 flex items-center transition duration-200 text-sm">
+                    <i class="fas fa-chevron-up mr-2" id="tabelaIcon"></i> Recolher/Expandir
+                </button>
+            </div>
+            <div id="tabelaContent" class="hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-gray-200 table-header">
+                            <tr>
+                                <th class="p-3 font-semibold border sortable-header" data-column-key="Pasta">Pasta<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header" data-column-key="Identificador">Identificador<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header" data-column-key="Responsaveis">Responsáveis<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header" data-column-key="Tipo">Tipo<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header" data-column-key="DataCriacao">Data criação<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header" data-column-key="DataBase">Data base<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header" data-column-key="DataPrevista">Data prevista<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header" data-column-key="DataFatal">Data fatal<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header" data-column-key="DataConclusao">Data conclusão<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header" data-column-key="Grupos">Grupos<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header" data-column-key="Situacao">Situação<i class="fas fa-sort sort-icon"></i></th>
+                                <th class="p-3 font-semibold border sortable-header" data-column-key="Status">Status<i class="fas fa-sort sort-icon"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaTarefas">
+                            <tr>
+                                <td class="p-3 text-gray-500 italic border" colspan="12">Carregando...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== CONFIGURAÇÃO DO PROXY ====================
+        // Este dashboard usa o servidor proxy local para evitar problemas de CORS
+        const PROXY_URL = window.location.origin; // http://localhost:3000
+
+        // ==================== VARIÁVEIS GLOBAIS ====================
+        let tarefas = [];
+        let tarefasFiltradas = [];
+        let atrasos = [];
+        let adiantadas = [];
+        let chartStatus, chartTipo, chartTaxaConclusao;
+        let sortConfig = { key: null, direction: 'none' };
+        let sortConfigAtraso = { key: 'DiasAtraso', direction: 'desc' };
+        let sortConfigAdiantadas = { key: 'TempoOtimizado', direction: 'desc' };
+        let autoRefreshInterval = null;
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+
+        // ==================== FUNÇÕES DE API (via Proxy) ====================
+        async function buscarTarefasDaAPI() {
+            try {
+                console.log('→ Buscando tarefas via proxy...');
+
+                // Buscar tarefas através do proxy local
+                const response = await fetch(`${PROXY_URL}/api/tarefas`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        // Filtros podem ser adicionados aqui se necessário
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `Erro ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Erro desconhecido');
+                }
+
+                console.log(`✓ ${data.total} tarefas recebidas`);
+                return { tarefaConsultaWs: data.tarefas };
+
+            } catch (error) {
+                console.error('✗ Erro ao buscar tarefas:', error);
+                mostrarMensagem('erro', `Erro ao buscar tarefas: ${error.message}`);
+                atualizarStatusConexao(false);
+                throw error;
+            }
+        }
+
+        // ==================== MAPEAMENTO DE DADOS ====================
+        function mapearTarefaAPI(tarefaAPI) {
+            // Mapeia os campos da API do Projuris para o formato do dashboard
+            return {
+                Pasta: String(tarefaAPI.chaveModulo || tarefaAPI.modulo?.chave || '').trim(),
+                Identificador: String(tarefaAPI.identificador || '').trim(),
+                Responsaveis: String(tarefaAPI.usuarioResponsaveis || '').trim(),
+                Tipo: String(tarefaAPI.nomeTarefaTipo || '').trim(),
+                DataCriacao: formatarDataAPI(tarefaAPI.dataInclusao),
+                DataBase: '', // Não disponível na consulta básica
+                DataPrevista: formatarDataAPI(tarefaAPI.dataConclusaoPrevista),
+                DataFatal: formatarDataAPI(tarefaAPI.dataLimite),
+                DataConclusao: formatarDataAPI(tarefaAPI.dataConclusao),
+                Grupos: String(tarefaAPI.gruposResponsaveis || '').trim(),
+                Situacao: String(tarefaAPI.situacao || '').trim(),
+                // Dados adicionais
+                codigoTarefa: tarefaAPI.codigoTarefa,
+                flagConcluida: tarefaAPI.flagSituacaoConcluida || false
+            };
+        }
+
+        function formatarDataAPI(dataStr) {
+            if (!dataStr) return '';
+            try {
+                // A API pode retornar em formato ISO ou timestamp
+                const date = new Date(dataStr);
+                if (isNaN(date.getTime())) return '';
+
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+
+                return `${year}-${month}-${day}`;
+            } catch (error) {
+                console.warn(`Erro ao formatar data: ${dataStr}`, error);
+                return '';
+            }
+        }
+
+        // ==================== CARREGAMENTO DE DADOS ====================
+        async function carregarDados(manual = false) {
+            const refreshIcon = document.getElementById('refreshIcon');
+            if (refreshIcon) {
+                refreshIcon.classList.add('fa-spin');
+            }
+
+            try {
+                const dadosAPI = await buscarTarefasDaAPI();
+
+                // Mapear tarefas da API
+                if (dadosAPI && dadosAPI.tarefaConsultaWs) {
+                    tarefas = dadosAPI.tarefaConsultaWs.map(mapearTarefaAPI);
+                } else if (Array.isArray(dadosAPI)) {
+                    tarefas = dadosAPI.map(mapearTarefaAPI);
+                } else {
+                    throw new Error('Formato de resposta da API não reconhecido');
+                }
+
+                tarefasFiltradas = [...tarefas];
+                atualizarFiltros();
+                processarTarefas();
+                atualizarStatusConexao(true);
+                atualizarUltimaAtualizacao();
+
+                if (manual) {
+                    mostrarMensagem('sucesso', `${tarefas.length} tarefas carregadas com sucesso!`);
+                    setTimeout(() => {
+                        document.getElementById('successMessage').classList.add('hidden');
+                    }, 3000);
+                }
+            } catch (error) {
+                console.error('Erro ao carregar dados:', error);
+                atualizarStatusConexao(false);
+            } finally {
+                if (refreshIcon) {
+                    refreshIcon.classList.remove('fa-spin');
+                }
+            }
+        }
+
+        // ==================== FUNÇÕES DE UI ====================
+        function atualizarStatusConexao(online) {
+            const indicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+
+            if (online) {
+                indicator.classList.remove('status-offline');
+                indicator.classList.add('status-online');
+                statusText.textContent = 'Conectado';
+                statusText.className = 'text-green-600';
+            } else {
+                indicator.classList.remove('status-online');
+                indicator.classList.add('status-offline');
+                statusText.textContent = 'Desconectado';
+                statusText.className = 'text-red-600';
+            }
+        }
+
+        function atualizarUltimaAtualizacao() {
+            const agora = new Date();
+            const horas = String(agora.getHours()).padStart(2, '0');
+            const minutos = String(agora.getMinutes()).padStart(2, '0');
+            const segundos = String(agora.getSeconds()).padStart(2, '0');
+
+            document.getElementById('ultimaAtualizacao').textContent = `${horas}:${minutos}:${segundos}`;
+        }
+
+        function mostrarMensagem(tipo, texto) {
+            const errorDiv = document.getElementById('errorMessage');
+            const successDiv = document.getElementById('successMessage');
+
+            errorDiv.classList.add('hidden');
+            successDiv.classList.add('hidden');
+
+            if (tipo === 'erro') {
+                errorDiv.textContent = texto;
+                errorDiv.classList.remove('hidden');
+            } else {
+                successDiv.textContent = texto;
+                successDiv.classList.remove('hidden');
+            }
+        }
+
+        function toggleSelecaoResponsaveis() {
+            const checkboxes = document.querySelectorAll('input[name="responsavel"]');
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            checkboxes.forEach(cb => {
+                cb.checked = !allChecked;
+            });
+            aplicarFiltros();
+        }
+
+        function toggleSelecaoSituacoes() {
+            const checkboxes = document.querySelectorAll('input[name="situacao"]');
+            const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+            checkboxes.forEach(cb => {
+                cb.checked = !allChecked;
+            });
+            aplicarFiltros();
+        }
+
+        function toggleSection(sectionId) {
+            const content = document.getElementById(sectionId);
+            const icon = document.getElementById(`${sectionId.replace('Content', '')}Icon`);
+            content.classList.toggle('hidden');
+            icon.classList.toggle('fa-chevron-up');
+            icon.classList.toggle('fa-chevron-down');
+
+            if (sectionId === 'tabelaContent' && !content.classList.contains('hidden')) {
+                ordenarTarefas(tarefasFiltradas);
+                renderizarTabelaCompleta(tarefasFiltradas);
+                atualizarIconesOrdenacao();
+            }
+        }
+
+        function toggleTabela() {
+            const tabelaContainer = document.getElementById('tabelaContainer');
+            tabelaContainer.classList.toggle('hidden');
+
+            if (!tabelaContainer.classList.contains('hidden')) {
+                document.getElementById('tabelaContent').classList.remove('hidden');
+                document.getElementById('tabelaIcon').classList.remove('fa-chevron-down');
+                document.getElementById('tabelaIcon').classList.add('fa-chevron-up');
+                ordenarTarefas(tarefasFiltradas);
+                renderizarTabelaCompleta(tarefasFiltradas);
+                atualizarIconesOrdenacao();
+            } else {
+                document.getElementById('tabelaContent').classList.add('hidden');
+                document.getElementById('tabelaIcon').classList.remove('fa-chevron-up');
+                document.getElementById('tabelaIcon').classList.add('fa-chevron-down');
+            }
+        }
+
+        // ==================== FUNÇÕES DE PROCESSAMENTO ====================
+        function determinarStatus(tarefa) {
+            const situacao = (tarefa.Situacao || '').toLowerCase().trim();
+
+            if (tarefa.flagConcluida ||
+                situacao.includes('concluída com sucesso') ||
+                situacao.includes('concluídas com sucesso') ||
+                situacao.includes('concluída sem sucesso') ||
+                situacao.includes('concluídas sem sucesso')) {
+                return 'Concluído';
+            }
+
+            if (tarefa.DataFatal) {
+                const dataFatal = new Date(tarefa.DataFatal);
+                dataFatal.setHours(23, 59, 59, 999);
+
+                if (!isNaN(dataFatal.getTime()) && dataFatal < hoje) {
+                    return 'Atraso';
+                }
+            }
+
+            return 'Prazo em aberto';
+        }
+
+        function calcularDiasAtraso(dataFatalStr) {
+            if (!dataFatalStr) return 0;
+
+            const dataFatal = new Date(dataFatalStr);
+            dataFatal.setHours(0, 0, 0, 0);
+
+            if (dataFatal >= hoje) return 0;
+
+            const diffTime = hoje.getTime() - dataFatal.getTime();
+            return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        }
+
+        function calcularTempoDecorrido(tarefa) {
+            if (!tarefa.DataCriacao) return { dias: '-', color: 'text-gray-500' };
+
+            const dataCriacao = new Date(tarefa.DataCriacao);
+            const dataFim = tarefa.DataConclusao ? new Date(tarefa.DataConclusao) : hoje;
+            const dataFatal = tarefa.DataFatal ? new Date(tarefa.DataFatal) : null;
+
+            if (isNaN(dataCriacao.getTime()) || isNaN(dataFim.getTime())) {
+                return { dias: '-', color: 'text-gray-500' };
+            }
+
+            const diffTime = dataFim.getTime() - dataCriacao.getTime();
+            const dias = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            let color = 'text-gray-700';
+            if (tarefa.DataConclusao && dataFatal && !isNaN(dataFatal.getTime()) &&
+                new Date(tarefa.DataConclusao) < dataFatal) {
+                color = 'text-green-500';
+            }
+
+            return { dias, color };
+        }
+
+        function calcularTempoOtimizado(dataConclusaoStr, dataFatalStr) {
+            if (!dataConclusaoStr || !dataFatalStr) {
+                return { dias: '-', color: 'text-gray-500' };
+            }
+
+            const dataConclusao = new Date(dataConclusaoStr);
+            const dataFatal = new Date(dataFatalStr);
+
+            if (isNaN(dataConclusao.getTime()) || isNaN(dataFatal.getTime())) {
+                return { dias: '-', color: 'text-gray-500' };
+            }
+
+            const diffTime = dataFatal.getTime() - dataConclusao.getTime();
+            const dias = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            return {
+                dias: dias >= 0 ? dias : '-',
+                color: dias >= 0 ? 'text-green-500' : 'text-gray-500'
+            };
+        }
+
+        function formatarDataExibicao(dataStr) {
+            if (!dataStr) return '-';
+            try {
+                const [year, month, day] = dataStr.split('-');
+                return `${day}/${month}/${year}`;
+            } catch (error) {
+                return dataStr;
+            }
+        }
+
+        function processarTarefas() {
+            const contadores = {
+                total: tarefasFiltradas.length,
+                concluidas: 0,
+                atraso: 0,
+                emAberto: 0
+            };
+
+            atrasos = [];
+            adiantadas = [];
+
+            tarefasFiltradas.forEach(tarefa => {
+                const status = determinarStatus(tarefa);
+
+                if (status === 'Concluído') {
+                    contadores.concluidas++;
+
+                    if (tarefa.DataConclusao && tarefa.DataFatal) {
+                        const dataConclusao = new Date(tarefa.DataConclusao);
+                        const dataFatal = new Date(tarefa.DataFatal);
+
+                        if (!isNaN(dataConclusao.getTime()) && !isNaN(dataFatal.getTime()) &&
+                            dataConclusao < dataFatal) {
+                            tarefa.TempoOtimizado = calcularTempoOtimizado(tarefa.DataConclusao, tarefa.DataFatal).dias;
+                            adiantadas.push(tarefa);
+                        }
+                    }
+                } else if (status === 'Atraso') {
+                    contadores.atraso++;
+                    tarefa.DiasAtraso = calcularDiasAtraso(tarefa.DataFatal);
+                    tarefa.TempoDecorrido = calcularTempoDecorrido(tarefa).dias;
+                    atrasos.push(tarefa);
+                } else {
+                    contadores.emAberto++;
+                }
+            });
+
+            if (!document.getElementById('tabelaContent').classList.contains('hidden')) {
+                ordenarTarefas(tarefasFiltradas);
+                renderizarTabelaCompleta(tarefasFiltradas);
+            }
+
+            ordenarTarefasAtraso(atrasos);
+            renderizarTabelaAtrasos(atrasos);
+
+            ordenarTarefasAdiantadas(adiantadas);
+            renderizarTabelaAdiantadas(adiantadas);
+
+            atualizarIconesOrdenacaoAtraso();
+            atualizarIconesOrdenacaoAdiantadas();
+
+            atualizarResumo(contadores);
+            atualizarGraficos(contadores);
+        }
+
+        // ==================== RENDERIZAÇÃO ====================
+        function renderizarTabelaCompleta(tarefasParaRenderizar) {
+            const tabela = document.getElementById('tabelaTarefas');
+            tabela.innerHTML = '';
+
+            if (tarefasParaRenderizar.length === 0) {
+                tabela.innerHTML = '<tr><td class="p-3 text-gray-500 italic border" colspan="12">Nenhuma tarefa encontrada.</td></tr>';
+                return;
+            }
+
+            tarefasParaRenderizar.forEach(tarefa => {
+                const status = determinarStatus(tarefa);
+                const row = document.createElement('tr');
+                row.classList.add('zebra-stripe');
+                row.innerHTML = `
+                    <td class="p-3 border">${tarefa.Pasta || '-'}</td>
+                    <td class="p-3 border">${tarefa.Identificador || '-'}</td>
+                    <td class="p-3 border">${tarefa.Responsaveis || '-'}</td>
+                    <td class="p-3 border">${tarefa.Tipo || '-'}</td>
+                    <td class="p-3 border">${formatarDataExibicao(tarefa.DataCriacao)}</td>
+                    <td class="p-3 border">${formatarDataExibicao(tarefa.DataBase)}</td>
+                    <td class="p-3 border">${formatarDataExibicao(tarefa.DataPrevista)}</td>
+                    <td class="p-3 border">${formatarDataExibicao(tarefa.DataFatal)}</td>
+                    <td class="p-3 border">${formatarDataExibicao(tarefa.DataConclusao)}</td>
+                    <td class="p-3 border">${tarefa.Grupos || '-'}</td>
+                    <td class="p-3 border">${tarefa.Situacao || '-'}</td>
+                    <td class="p-3 border">
+                        <span class="px-2 py-1 rounded text-xs font-semibold ${
+                            status === 'Concluído' ? 'status-concluido' :
+                            status === 'Prazo em aberto' ? 'status-aberto' : 'status-atraso'
+                        }">
+                            <i class="fas ${
+                                status === 'Concluído' ? 'fa-check-circle' :
+                                status === 'Prazo em aberto' ? 'fa-clock' : 'fa-exclamation-circle'
+                            } mr-1"></i>
+                            ${status}
+                        </span>
+                    </td>
+                `;
+                tabela.appendChild(row);
+            });
+        }
+
+        function renderizarTabelaAtrasos(atrasos) {
+            const atrasoLista = document.getElementById('listaAtrasos');
+            atrasoLista.innerHTML = '';
+
+            if (atrasos.length === 0) {
+                atrasoLista.innerHTML = '<tr><td class="p-3 text-gray-500 italic border" colspan="7">Nenhuma tarefa em atraso.</td></tr>';
+                return;
+            }
+
+            atrasos.forEach(tarefa => {
+                const { dias, color } = calcularTempoDecorrido(tarefa);
+                const atrasoRow = document.createElement('tr');
+                atrasoRow.classList.add('zebra-stripe');
+                atrasoRow.innerHTML = `
+                    <td class="p-3 border">${tarefa.Pasta || '-'}</td>
+                    <td class="p-3 border">${tarefa.Identificador || '-'}</td>
+                    <td class="p-3 border">${tarefa.Responsaveis || '-'}</td>
+                    <td class="p-3 border">${tarefa.Tipo || '-'}</td>
+                    <td class="p-3 border">${formatarDataExibicao(tarefa.DataFatal)}</td>
+                    <td class="p-3 text-red-500 font-semibold border">${tarefa.DiasAtraso} dias</td>
+                    <td class="p-3 ${color} font-semibold border">${dias} dias</td>
+                `;
+                atrasoLista.appendChild(atrasoRow);
+            });
+        }
+
+        function renderizarTabelaAdiantadas(adiantadas) {
+            const adiantadasLista = document.getElementById('listaAdiantadas');
+            adiantadasLista.innerHTML = '';
+
+            if (adiantadas.length === 0) {
+                adiantadasLista.innerHTML = '<tr><td class="p-3 text-gray-500 italic border" colspan="8">Nenhuma tarefa adiantada.</td></tr>';
+                return;
+            }
+
+            adiantadas.forEach(tarefa => {
+                const { dias: diasDecorrido, color: colorDecorrido } = calcularTempoDecorrido(tarefa);
+                const { dias: diasOtimizado, color: colorOtimizado } = calcularTempoOtimizado(tarefa.DataConclusao, tarefa.DataFatal);
+
+                const adiantadaRow = document.createElement('tr');
+                adiantadaRow.classList.add('zebra-stripe');
+                adiantadaRow.innerHTML = `
+                    <td class="p-3 border">${tarefa.Pasta || '-'}</td>
+                    <td class="p-3 border">${tarefa.Identificador || '-'}</td>
+                    <td class="p-3 border">${tarefa.Responsaveis || '-'}</td>
+                    <td class="p-3 border">${tarefa.Tipo || '-'}</td>
+                    <td class="p-3 border">${formatarDataExibicao(tarefa.DataCriacao)}</td>
+                    <td class="p-3 border">${formatarDataExibicao(tarefa.DataConclusao)}</td>
+                    <td class="p-3 ${colorDecorrido} font-semibold border">${diasDecorrido} dias</td>
+                    <td class="p-3 ${colorOtimizado} font-semibold border">${diasOtimizado} dias</td>
+                `;
+                adiantadasLista.appendChild(adiantadaRow);
+            });
+        }
+
+        function atualizarResumo(contadores) {
+            document.getElementById('totalTarefas').textContent = contadores.total;
+            document.getElementById('contadorAtraso').textContent = contadores.atraso;
+            document.getElementById('tarefasConcluidas').textContent = contadores.concluidas;
+            document.getElementById('contadorEmAberto').textContent = contadores.emAberto;
+
+            const taxa = contadores.total > 0 ?
+                ((contadores.concluidas / contadores.total) * 100).toFixed(1) : '0';
+            document.getElementById('taxaConclusao').textContent = `${taxa}%`;
+        }
+
+        function atualizarGraficos(contadores) {
+            if (chartStatus) chartStatus.destroy();
+            if (chartTipo) chartTipo.destroy();
+            if (chartTaxaConclusao) chartTaxaConclusao.destroy();
+
+            // Gráfico de Status
+            const ctxStatus = document.getElementById('graficoStatus').getContext('2d');
+            chartStatus = new Chart(ctxStatus, {
+                type: 'pie',
+                data: {
+                    labels: ['Concluído', 'Prazo em aberto', 'Atraso'],
+                    datasets: [{
+                        data: [contadores.concluidas, contadores.emAberto, contadores.atraso],
+                        backgroundColor: ['#22c55e', '#3b82f6', '#ef4444'],
+                        borderColor: ['#ffffff'],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ?
+                                        ((context.parsed * 100) / total).toFixed(1) : 0;
+                                    return `${context.label}: ${context.parsed} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Gráfico de Tipos
+            const tipos = [...new Set(tarefasFiltradas.map(t => t.Tipo))].filter(Boolean);
+            const dadosPorTipo = tipos.map(tipo =>
+                tarefasFiltradas.filter(t => t.Tipo === tipo).length
+            );
+
+            const ctxTipo = document.getElementById('graficoTipo').getContext('2d');
+            chartTipo = new Chart(ctxTipo, {
+                type: 'bar',
+                data: {
+                    labels: tipos.length > 0 ? tipos : ['Nenhum tipo'],
+                    datasets: [{
+                        label: 'Número de Tarefas',
+                        data: dadosPorTipo.length > 0 ? dadosPorTipo : [0],
+                        backgroundColor: '#3b82f6'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { precision: 0 }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+
+            // Gráfico de Taxa de Conclusão
+            const ctxTaxaConclusao = document.getElementById('graficoTaxaConclusao').getContext('2d');
+            chartTaxaConclusao = new Chart(ctxTaxaConclusao, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Concluídas', 'Não Concluídas'],
+                    datasets: [{
+                        data: [contadores.concluidas, contadores.total - contadores.concluidas],
+                        backgroundColor: ['#22c55e', '#e5e7eb'],
+                        borderColor: ['#ffffff'],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: false,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: true }
+                    },
+                    cutout: '60%'
+                }
+            });
+        }
+
+        // ==================== FILTROS ====================
+        function atualizarFiltros() {
+            const responsaveisSet = new Set();
+            const situacoesSet = new Set();
+
+            tarefas.forEach(t => {
+                if (t.Responsaveis) {
+                    t.Responsaveis.split(',').forEach(r => {
+                        const nome = r.trim();
+                        if (nome) responsaveisSet.add(nome);
+                    });
+                }
+                if (t.Situacao) {
+                    situacoesSet.add(t.Situacao.trim());
+                }
+            });
+
+            const responsaveis = Array.from(responsaveisSet).sort();
+            const situacoes = Array.from(situacoesSet).sort();
+            const grupos = [...new Set(tarefas.map(t => t.Grupos).filter(Boolean))].sort();
+            const todosTipos = [...new Set(tarefas.map(t => t.Tipo).filter(Boolean))];
+            const tiposTarefa = todosTipos.filter(t => t.startsWith('#')).sort();
+            const tiposRelacionada = todosTipos.filter(t => !t.startsWith('#')).sort();
+
+            const responsaveisContainer = document.getElementById('filtroResponsaveisContainer');
+            responsaveisContainer.innerHTML = responsaveis.length > 0 ?
+                responsaveis.map(r => `
+                    <label class="block hover:bg-gray-50 cursor-pointer p-2">
+                        <input type="checkbox" name="responsavel" value="${r}" class="checkbox-custom" onchange="aplicarFiltros()">
+                        <span class="text-sm">${r}</span>
+                    </label>
+                `).join('') :
+                '<p class="p-4 text-gray-500 text-sm">Nenhum responsável encontrado</p>';
+
+            const situacaoContainer = document.getElementById('filtroSituacaoContainer');
+            situacaoContainer.innerHTML = situacoes.length > 0 ?
+                situacoes.map(s => `
+                    <label class="block hover:bg-gray-50 cursor-pointer p-2">
+                        <input type="checkbox" name="situacao" value="${s}" class="checkbox-custom" onchange="aplicarFiltros()">
+                        <span class="text-sm">${s}</span>
+                    </label>
+                `).join('') :
+                '<p class="p-4 text-gray-500 text-sm">Nenhuma situação encontrada</p>';
+
+            const selectTipoTarefa = document.getElementById('filtroTipoTarefa');
+            selectTipoTarefa.innerHTML = '<option value="">Todos</option><option value="NENHUM">Nenhum</option>' +
+                tiposTarefa.map(t => `<option value="${t}">${t}</option>`).join('');
+
+            const selectTipoRelacionada = document.getElementById('filtroTipoRelacionada');
+            selectTipoRelacionada.innerHTML = '<option value="">Todas</option><option value="NENHUM">Nenhum</option>' +
+                tiposRelacionada.map(t => `<option value="${t}">${t}</option>`).join('');
+
+            const selectGrupos = document.getElementById('filtroGrupos');
+            selectGrupos.innerHTML = '<option value="">Todos</option>' +
+                grupos.map(g => `<option value="${g}">${g}</option>`).join('');
+        }
+
+        function aplicarFiltros() {
+            const responsaveis = Array.from(document.querySelectorAll('input[name="responsavel"]:checked'))
+                .map(cb => cb.value);
+            const situacoes = Array.from(document.querySelectorAll('input[name="situacao"]:checked'))
+                .map(cb => cb.value);
+            const tipoTarefa = document.getElementById('filtroTipoTarefa').value;
+            const tipoRelacionada = document.getElementById('filtroTipoRelacionada').value;
+            const grupos = document.getElementById('filtroGrupos').value;
+            const dataCriacaoInicio = document.getElementById('filtroDataCriacaoInicio').value;
+            const dataCriacaoFim = document.getElementById('filtroDataCriacaoFim').value;
+            const dataFatalInicio = document.getElementById('filtroDataFatalInicio').value;
+            const dataFatalFim = document.getElementById('filtroDataFatalFim').value;
+
+            tarefasFiltradas = tarefas.filter(tarefa => {
+                if (responsaveis.length > 0 &&
+                    !responsaveis.some(r => tarefa.Responsaveis.split(',').map(n => n.trim()).includes(r))) {
+                    return false;
+                }
+
+                if (situacoes.length > 0 && !situacoes.includes(tarefa.Situacao)) {
+                    return false;
+                }
+
+                if (tipoTarefa) {
+                    if (tipoTarefa === 'NENHUM' && tarefa.Tipo.startsWith('#')) return false;
+                    if (tipoTarefa !== 'NENHUM' && tarefa.Tipo !== tipoTarefa) return false;
+                }
+
+                if (tipoRelacionada) {
+                    if (tipoRelacionada === 'NENHUM' && !tarefa.Tipo.startsWith('#') && tarefa.Tipo) return false;
+                    if (tipoRelacionada !== 'NENHUM' && tarefa.Tipo !== tipoRelacionada) return false;
+                }
+
+                if (grupos && tarefa.Grupos !== grupos) return false;
+
+                const dataCriacao = tarefa.DataCriacao ? new Date(tarefa.DataCriacao) : null;
+                if (dataCriacao) {
+                    if (dataCriacaoInicio && dataCriacao < new Date(dataCriacaoInicio + 'T00:00:00')) return false;
+                    if (dataCriacaoFim && dataCriacao > new Date(dataCriacaoFim + 'T23:59:59')) return false;
+                } else if (dataCriacaoInicio || dataCriacaoFim) {
+                    return false;
+                }
+
+                const dataFatal = tarefa.DataFatal ? new Date(tarefa.DataFatal) : null;
+                if (dataFatal) {
+                    if (dataFatalInicio && dataFatal < new Date(dataFatalInicio + 'T00:00:00')) return false;
+                    if (dataFatalFim && dataFatal > new Date(dataFatalFim + 'T23:59:59')) return false;
+                } else if (dataFatalInicio || dataFatalFim) {
+                    return false;
+                }
+
+                return true;
+            });
+
+            processarTarefas();
+        }
+
+        function limparFiltros() {
+            document.querySelectorAll('input[name="responsavel"]').forEach(cb => cb.checked = false);
+            document.querySelectorAll('input[name="situacao"]').forEach(cb => cb.checked = false);
+            document.getElementById('filtroTipoTarefa').value = '';
+            document.getElementById('filtroTipoRelacionada').value = '';
+            document.getElementById('filtroGrupos').value = '';
+            document.getElementById('filtroDataCriacaoInicio').value = '';
+            document.getElementById('filtroDataCriacaoFim').value = '';
+            document.getElementById('filtroDataFatalInicio').value = '';
+            document.getElementById('filtroDataFatalFim').value = '';
+
+            if (tarefas.length > 0) {
+                tarefasFiltradas = [...tarefas];
+                processarTarefas();
+            }
+        }
+
+        // ==================== ORDENAÇÃO ====================
+        function ordenarTarefas(arrayParaOrdenar) {
+            const { key, direction } = sortConfig;
+            if (direction === 'none' || !key) return;
+
+            const eData = (str) => str ? new Date(str).getTime() : 0;
+            const statusOrder = {
+                'Atraso': 1,
+                'Prazo em aberto': 2,
+                'Concluído': 3
+            };
+
+            arrayParaOrdenar.sort((a, b) => {
+                let valA, valB;
+
+                switch (key) {
+                    case 'DataCriacao':
+                    case 'DataBase':
+                    case 'DataPrevista':
+                    case 'DataFatal':
+                    case 'DataConclusao':
+                        valA = eData(a[key]);
+                        valB = eData(b[key]);
+                        break;
+                    case 'Status':
+                        valA = statusOrder[determinarStatus(a)] || 99;
+                        valB = statusOrder[determinarStatus(b)] || 99;
+                        break;
+                    case 'Pasta':
+                    case 'Identificador':
+                        valA = parseInt(a[key], 10) || 0;
+                        valB = parseInt(b[key], 10) || 0;
+                        break;
+                    default:
+                        valA = String(a[key] || '').toLowerCase();
+                        valB = String(b[key] || '').toLowerCase();
+                        break;
+                }
+
+                if (valA < valB) return direction === 'asc' ? -1 : 1;
+                if (valA > valB) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        function ordenarTarefasAtraso(arrayParaOrdenar) {
+            const { key, direction } = sortConfigAtraso;
+            if (direction === 'none' || !key) return;
+
+            const eData = (str) => str ? new Date(str).getTime() : 0;
+
+            arrayParaOrdenar.sort((a, b) => {
+                let valA, valB;
+
+                switch (key) {
+                    case 'DataFatal':
+                        valA = eData(a[key]);
+                        valB = eData(b[key]);
+                        break;
+                    case 'DiasAtraso':
+                    case 'Pasta':
+                    case 'Identificador':
+                        valA = parseInt(a[key], 10) || 0;
+                        valB = parseInt(b[key], 10) || 0;
+                        break;
+                    case 'TempoDecorrido':
+                        valA = calcularTempoDecorrido(a).dias;
+                        valB = calcularTempoDecorrido(b).dias;
+                        valA = typeof valA === 'number' ? valA : -Infinity;
+                        valB = typeof valB === 'number' ? valB : -Infinity;
+                        break;
+                    default:
+                        valA = String(a[key] || '').toLowerCase();
+                        valB = String(b[key] || '').toLowerCase();
+                        break;
+                }
+
+                if (valA < valB) return direction === 'asc' ? -1 : 1;
+                if (valA > valB) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        function ordenarTarefasAdiantadas(arrayParaOrdenar) {
+            const { key, direction } = sortConfigAdiantadas;
+            if (direction === 'none' || !key) return;
+
+            const eData = (str) => str ? new Date(str).getTime() : 0;
+
+            arrayParaOrdenar.sort((a, b) => {
+                let valA, valB;
+
+                switch (key) {
+                    case 'DataCriacao':
+                    case 'DataConclusao':
+                        valA = eData(a[key]);
+                        valB = eData(b[key]);
+                        break;
+                    case 'Pasta':
+                    case 'Identificador':
+                        valA = parseInt(a[key], 10) || 0;
+                        valB = parseInt(b[key], 10) || 0;
+                        break;
+                    case 'TempoDecorrido':
+                        valA = calcularTempoDecorrido(a).dias;
+                        valB = calcularTempoDecorrido(b).dias;
+                        valA = typeof valA === 'number' ? valA : -Infinity;
+                        valB = typeof valB === 'number' ? valB : -Infinity;
+                        break;
+                    case 'TempoOtimizado':
+                        valA = calcularTempoOtimizado(a.DataConclusao, a.DataFatal).dias;
+                        valB = calcularTempoOtimizado(b.DataConclusao, b.DataFatal).dias;
+                        valA = typeof valA === 'number' ? valA : -Infinity;
+                        valB = typeof valB === 'number' ? valB : -Infinity;
+                        break;
+                    default:
+                        valA = String(a[key] || '').toLowerCase();
+                        valB = String(b[key] || '').toLowerCase();
+                        break;
+                }
+
+                if (valA < valB) return direction === 'asc' ? -1 : 1;
+                if (valA > valB) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        function atualizarIconesOrdenacao() {
+            document.querySelectorAll('.sortable-header').forEach(header => {
+                const icon = header.querySelector('.sort-icon');
+                const key = header.getAttribute('data-column-key');
+                icon.classList.remove('fa-sort', 'fa-sort-up', 'fa-sort-down', 'active');
+
+                if (key === sortConfig.key) {
+                    icon.classList.add('active');
+                    if (sortConfig.direction === 'asc') icon.classList.add('fa-sort-up');
+                    else if (sortConfig.direction === 'desc') icon.classList.add('fa-sort-down');
+                    else icon.classList.add('fa-sort');
+                } else {
+                    icon.classList.add('fa-sort');
+                }
+            });
+        }
+
+        function atualizarIconesOrdenacaoAtraso() {
+            document.querySelectorAll('.sortable-header-atraso').forEach(header => {
+                const icon = header.querySelector('.sort-icon');
+                const key = header.getAttribute('data-column-key');
+                icon.classList.remove('fa-sort', 'fa-sort-up', 'fa-sort-down', 'active');
+
+                if (key === sortConfigAtraso.key) {
+                    icon.classList.add('active');
+                    if (sortConfigAtraso.direction === 'asc') icon.classList.add('fa-sort-up');
+                    else if (sortConfigAtraso.direction === 'desc') icon.classList.add('fa-sort-down');
+                    else icon.classList.add('fa-sort');
+                } else {
+                    icon.classList.add('fa-sort');
+                }
+            });
+        }
+
+        function atualizarIconesOrdenacaoAdiantadas() {
+            document.querySelectorAll('.sortable-header-adiantadas').forEach(header => {
+                const icon = header.querySelector('.sort-icon');
+                const key = header.getAttribute('data-column-key');
+                icon.classList.remove('fa-sort', 'fa-sort-up', 'fa-sort-down', 'active');
+
+                if (key === sortConfigAdiantadas.key) {
+                    icon.classList.add('active');
+                    if (sortConfigAdiantadas.direction === 'asc') icon.classList.add('fa-sort-up');
+                    else if (sortConfigAdiantadas.direction === 'desc') icon.classList.add('fa-sort-down');
+                    else icon.classList.add('fa-sort');
+                } else {
+                    icon.classList.add('fa-sort');
+                }
+            });
+        }
+
+        // ==================== EXPORTAÇÃO ====================
+        function exportarExcel() {
+            if (typeof XLSX === 'undefined') {
+                mostrarMensagem('erro', 'Biblioteca XLSX não encontrada. Certifique-se de que o script está carregado.');
+                return;
+            }
+
+            if (tarefasFiltradas.length === 0) {
+                mostrarMensagem('erro', 'Nenhuma tarefa para exportar.');
+                return;
+            }
+
+            try {
+                const workbook = XLSX.utils.book_new();
+
+                // Aba 1: Lista Completa
+                const dataCompleta = tarefasFiltradas.map(tarefa => ({
+                    'Pasta': tarefa.Pasta || '-',
+                    'Identificador da tarefa': tarefa.Identificador || '-',
+                    'Responsáveis da tarefa': tarefa.Responsaveis || '-',
+                    'Tipo de tarefa': tarefa.Tipo || '-',
+                    'Data de criação': formatarDataExibicao(tarefa.DataCriacao),
+                    'Data base': formatarDataExibicao(tarefa.DataBase),
+                    'Data prevista': formatarDataExibicao(tarefa.DataPrevista),
+                    'Data fatal': formatarDataExibicao(tarefa.DataFatal),
+                    'Data da conclusão': formatarDataExibicao(tarefa.DataConclusao),
+                    'Grupos de trabalho': tarefa.Grupos || '-',
+                    'Situação': tarefa.Situacao || '-',
+                    'Status': determinarStatus(tarefa)
+                }));
+
+                const wsCompleta = XLSX.utils.json_to_sheet(dataCompleta);
+                XLSX.utils.book_append_sheet(workbook, wsCompleta, 'Lista Completa');
+
+                // Aba 2: Tarefas em Atraso
+                const dataAtraso = atrasos.map(tarefa => ({
+                    'Pasta': tarefa.Pasta || '-',
+                    'Identificador da tarefa': tarefa.Identificador || '-',
+                    'Responsável': tarefa.Responsaveis || '-',
+                    'Tipo de tarefa': tarefa.Tipo || '-',
+                    'Data fatal': formatarDataExibicao(tarefa.DataFatal),
+                    'Dias em atraso': tarefa.DiasAtraso,
+                    'Tempo Decorrido': tarefa.TempoDecorrido
+                }));
+
+                const wsAtraso = XLSX.utils.json_to_sheet(dataAtraso);
+                XLSX.utils.book_append_sheet(workbook, wsAtraso, 'Tarefas em Atraso');
+
+                // Aba 3: Tarefas Adiantadas
+                const dataAdiantadas = adiantadas.map(tarefa => ({
+                    'Pasta': tarefa.Pasta || '-',
+                    'Identificador da tarefa': tarefa.Identificador || '-',
+                    'Responsável': tarefa.Responsaveis || '-',
+                    'Tipo de tarefa': tarefa.Tipo || '-',
+                    'Data de criação': formatarDataExibicao(tarefa.DataCriacao),
+                    'Data da conclusão': formatarDataExibicao(tarefa.DataConclusao),
+                    'Tempo Decorrido': calcularTempoDecorrido(tarefa).dias,
+                    'Tempo Otimizado': tarefa.TempoOtimizado
+                }));
+
+                const wsAdiantadas = XLSX.utils.json_to_sheet(dataAdiantadas);
+                XLSX.utils.book_append_sheet(workbook, wsAdiantadas, 'Tarefas Adiantadas');
+
+                // Salvar arquivo
+                const dataHora = new Date();
+                const nomeArquivo = `tarefas_projuris_${dataHora.getFullYear()}${String(dataHora.getMonth() + 1).padStart(2, '0')}${String(dataHora.getDate()).padStart(2, '0')}_${String(dataHora.getHours()).padStart(2, '0')}${String(dataHora.getMinutes()).padStart(2, '0')}.xlsx`;
+
+                XLSX.writeFile(workbook, nomeArquivo);
+                mostrarMensagem('sucesso', 'Arquivo Excel exportado com sucesso!');
+                setTimeout(() => {
+                    document.getElementById('successMessage').classList.add('hidden');
+                }, 3000);
+            } catch (error) {
+                console.error('Erro ao exportar Excel:', error);
+                mostrarMensagem('erro', `Erro ao exportar: ${error.message}`);
+            }
+        }
+
+        // ==================== EVENT LISTENERS ====================
+        document.querySelectorAll('.sortable-header').forEach(header => {
+            header.addEventListener('click', () => {
+                const key = header.getAttribute('data-column-key');
+                if (sortConfig.key === key) {
+                    sortConfig.direction = sortConfig.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sortConfig.key = key;
+                    sortConfig.direction = 'asc';
+                }
+                ordenarTarefas(tarefasFiltradas);
+                renderizarTabelaCompleta(tarefasFiltradas);
+                atualizarIconesOrdenacao();
+            });
+        });
+
+        document.querySelectorAll('.sortable-header-atraso').forEach(header => {
+            header.addEventListener('click', () => {
+                const key = header.getAttribute('data-column-key');
+                if (sortConfigAtraso.key === key) {
+                    sortConfigAtraso.direction = sortConfigAtraso.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sortConfigAtraso.key = key;
+                    sortConfigAtraso.direction = 'asc';
+                }
+                processarTarefas();
+            });
+        });
+
+        document.querySelectorAll('.sortable-header-adiantadas').forEach(header => {
+            header.addEventListener('click', () => {
+                const key = header.getAttribute('data-column-key');
+                if (sortConfigAdiantadas.key === key) {
+                    sortConfigAdiantadas.direction = sortConfigAdiantadas.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sortConfigAdiantadas.key = key;
+                    sortConfigAdiantadas.direction = 'asc';
+                }
+                processarTarefas();
+            });
+        });
+
+        document.getElementById('filtroTipoTarefa').addEventListener('change', aplicarFiltros);
+        document.getElementById('filtroTipoRelacionada').addEventListener('change', aplicarFiltros);
+        document.getElementById('filtroGrupos').addEventListener('change', aplicarFiltros);
+        document.getElementById('filtroDataCriacaoInicio').addEventListener('change', aplicarFiltros);
+        document.getElementById('filtroDataCriacaoFim').addEventListener('change', aplicarFiltros);
+        document.getElementById('filtroDataFatalInicio').addEventListener('change', aplicarFiltros);
+        document.getElementById('filtroDataFatalFim').addEventListener('change', aplicarFiltros);
+
+        document.getElementById('autoRefreshToggle').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                iniciarAutoRefresh();
+            } else {
+                pararAutoRefresh();
+            }
+        });
+
+        // ==================== AUTO-REFRESH ====================
+        function iniciarAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+            autoRefreshInterval = setInterval(() => {
+                carregarDados(false);
+            }, 30000); // 30 segundos
+        }
+
+        function pararAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+
+        // ==================== INICIALIZAÇÃO ====================
+        document.getElementById('graficosContent').classList.remove('hidden');
+        document.getElementById('adiantadasContent').classList.remove('hidden');
+        document.getElementById('atrasosContent').classList.remove('hidden');
+
+        // Carregar dados ao iniciar
+        window.addEventListener('load', () => {
+            carregarDados(true);
+            iniciarAutoRefresh();
+        });
+    </script>
+</body>
+</html>

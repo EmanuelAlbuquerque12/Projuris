@@ -1,0 +1,29 @@
+{
+  "name": "projuris-dashboard",
+  "version": "2.0.0",
+  "description": "Dashboard de Tarefas Projuris em Tempo Real com Proxy Server",
+  "main": "proxy-server.js",
+  "scripts": {
+    "start": "node proxy-server.js",
+    "dev": "nodemon proxy-server.js"
+  },
+  "keywords": [
+    "projuris",
+    "dashboard",
+    "tarefas",
+    "proxy"
+  ],
+  "author": "Cassel Ruzzarin",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "node-fetch": "^2.6.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
